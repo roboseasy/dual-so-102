@@ -1,6 +1,8 @@
 """7축 단팔(arm.py) 시험 — 버스 구성 · 보정 경로 · 재시도 · 미등록."""
 
+import errno
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -77,6 +79,27 @@ class ArmTest(unittest.TestCase):
 					normalize=False)
 		self.assertEqual(read_packet.call_count, 3)
 		self.assertEqual(write_packet.call_count, 3)
+
+	@unittest.skipIf(os.geteuid() == 0, 'root 는 배타 포트도 열 수 있다')
+	def test_bus_holds_port_exclusively(self) -> None:
+		"""연결한 버스의 포트는 다른 프로그램이 열 수 없고, 닫으면 다시 열린다.
+
+		다른 프로그램(포트 판별 · 두 번째 host)이 같은 포트를 열면 서보 응답을
+		가로채 host 가 끝나고 두 팔 토크가 풀린다.
+		"""
+		master, slave = os.openpty()
+		self.addCleanup(os.close, master)
+		port = os.ttyname(slave)
+		os.close(slave)
+		bus = make_bus(port, True, {})
+		bus.connect(handshake=False)
+		try:
+			with self.assertRaises(OSError) as raised:
+				os.close(os.open(port, os.O_RDWR | os.O_NOCTTY))
+			self.assertEqual(raised.exception.errno, errno.EBUSY)
+		finally:
+			bus.disconnect(disable_torque=False)
+		os.close(os.open(port, os.O_RDWR | os.O_NOCTTY))
 
 	def test_registers_nothing_on_import(self) -> None:
 		"""import 해도 dual_so102_* 말고는 아무 이름도 등록하지 않는다.

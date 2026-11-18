@@ -6,7 +6,9 @@
 """
 
 from dataclasses import replace
+import fcntl
 import logging
+import termios
 from typing import Final
 
 from lerobot.motors import Motor
@@ -34,7 +36,9 @@ logger = logging.getLogger(__name__)
 class SO102Bus(FeetechMotorsBus):
 	"""SO-102 7축 Feetech 버스.
 
-	공식 버스와 두 가지가 다르다.
+	공식 버스와 세 가지가 다르다.
+	- 연결한 포트를 배타로 잡는다. 다른 프로그램(포트 판별 · 두 번째 host 등)이
+	  같은 포트를 열면 서보 응답을 가로채 host 가 끝나고 토크가 풀린다.
 	- sync_read · sync_write 의 재시도 기본값이 BUS_NUM_RETRY 다.
 	- 미러 버스는 도 단위에서도 MIRROR_JOINTS 의 drive_mode 로 부호를 뒤집는다.
 	  LeRobot 은 -100~100 · 0~100 단위에서만 drive_mode 를 쓰고 도 단위에서는
@@ -54,6 +58,26 @@ class SO102Bus(FeetechMotorsBus):
 	) -> None:
 		super().__init__(port, motors, calibration)
 		self.is_mirror = is_mirror
+		close_port = self.port_handler.closePort
+
+		def close_port_shared() -> None:
+			# 배타를 풀고 닫는다 (pty 처럼 닫아도 tty 가 남는 장치도 다시 열리게)
+			if self.port_handler.is_open:
+				try:
+					fcntl.ioctl(self.port_handler.ser.fileno(), termios.TIOCNXCL)
+				except (OSError, ValueError):
+					pass
+			close_port()
+		self.port_handler.closePort = close_port_shared
+
+	def _connect(self, handshake: bool = True) -> None:
+		"""공식 연결 뒤 포트를 배타로 잡는다 (root 가 아닌 다른 열기는 EBUSY).
+
+		shortcut: 통신 속도를 바꾸면 SDK 가 포트를 다시 열어 배타가 풀린다
+		(모터 ID 설정 · 스캔 때만 그렇다).
+		"""
+		super()._connect(handshake)
+		fcntl.ioctl(self.port_handler.ser.fileno(), termios.TIOCEXCL)
 
 	def _is_mirrored_degrees(self, motor_id: int) -> bool:
 		"""이 모터의 도 단위 값을 뒤집어야 하는지."""

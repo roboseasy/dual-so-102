@@ -11,7 +11,7 @@
 | `--teleop.type=dual_so102_leader` | 리더가 꽂힌 PC | 리더 양팔 |
 | `--robot.type=dual_so102_client` | PC | Pi 에 꽂힌 팔로워 양팔 · 카메라를 네트워크로 |
 | `dual-so102-host` | Pi | 팔로워 양팔 · 카메라를 네트워크에 연다 |
-| `dual-so102-check` | 어디서나 | 포트마다 팔로워 · 리더 구분과 모터 ID 확인 (읽기만) |
+| `dual-so102-check` | 어디서나 | 포트마다 팔로워 · 리더 구분과 모터 ID 확인 (읽기만, 다른 프로그램이 쓰는 포트는 건드리지 않음) |
 | `dual-so102-setup-motors` | 어디서나 | 새 팔의 모터 ID 1~7 쓰기 |
 
 관측 · 행동 키는 14개(`left_*` · `right_*` × 관절 7개 `.pos`)로 기존 양팔 코드(`bi_so102_*`)와 같고,
@@ -170,8 +170,8 @@ lerobot-replay \
 - 끝내면 토크가 풀립니다 (공식 동작). **팔을 받친 채** 끝냅니다. Pi 분리 구성에서는 PC 를 끝내도 팔이
   자세를 유지하고, Pi 의 host 를 끝낼 때(Ctrl+C · `kill` · SSH 끊김) 토크가 풀립니다.
 - host 에는 인증이 없습니다. 같은 네트워크의 누구나 명령을 보낼 수 있으므로 **폐쇄망에서만** 씁니다.
-- `--robot.max_relative_target` 은 기본값(제한 없음)으로 둡니다. 5 로 두면 30 Hz 에서 관절 속도가
-  150°/s 로 잘려 팔로워가 리더를 둔하게 따라옵니다.
+- 팔별 `--robot.left_arm_config.max_relative_target` · `--robot.right_arm_config.max_relative_target` 은 기본값(제한 없음)으로
+  둡니다. 5 로 두면 30 Hz 에서 관절 속도가 150°/s 로 잘려 팔로워가 리더를 둔하게 따라옵니다.
 - 첫 연결 전에 리더를 팔로워와 비슷한 자세로 맞춥니다. 다르면 첫 명령에서 팔이 크게 움직입니다.
 
 ## 문서

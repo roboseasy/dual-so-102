@@ -50,6 +50,9 @@ class DualSO102Client(Robot):
 	def __init__(self, config: DualSO102ClientConfig) -> None:
 		super().__init__(config)
 		self.config = config
+		# lerobot-record 가 카메라 수(len(robot.cameras))로 이미지 저장 스레드를 정한다.
+		# 카메라는 Pi 의 host 가 열므로 이름만 둔다.
+		self.cameras: dict[str, None] = dict.fromkeys(config.cameras)
 		self._lock = threading.Lock()
 		self._stop_event = threading.Event()
 		self._receiver: threading.Thread | None = None

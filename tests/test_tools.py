@@ -2,6 +2,8 @@
 
 from contextlib import redirect_stdout
 import io
+import subprocess
+import sys
 import unittest
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -96,6 +98,23 @@ class ToolsTest(unittest.TestCase):
 			if line.startswith('F  열 수 없음')], lines)
 		ok_code, _ = self.run_check(['A', 'B'])
 		self.assertEqual(ok_code, 0)
+
+	def test_check_skips_port_in_use(self) -> None:
+		"""다른 프로세스(host · 텔레옵)가 연 포트는 열지 않고 '사용 중' 으로 알린다."""
+		mocks = self.fake_feetech()
+		port = self.root / 'ttyFAKE'
+		port.write_text('')
+		holder = subprocess.Popen([sys.executable, '-c',
+			f"f = open({str(port)!r}); print('OPEN', flush=True); "
+			'import time; time.sleep(60)'], stdout=subprocess.PIPE, text=True)
+		self.addCleanup(holder.wait)
+		self.addCleanup(holder.kill)
+		self.assertEqual(holder.stdout.readline().strip(), 'OPEN')
+		code, lines = self.run_check([str(port)])
+		self.assertEqual(code, 1)
+		self.assertTrue([line for line in lines if line.startswith(
+			f'{port}  사용 중 (pid {holder.pid})')], lines)
+		mocks['connect'].assert_not_called()
 
 	def test_check_is_read_only(self) -> None:
 		"""판별은 ping · 전압 읽기만 하고, 닫을 때도 토크를 건드리지 않는다."""

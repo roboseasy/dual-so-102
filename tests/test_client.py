@@ -1,5 +1,8 @@
 """PC client(dual_so102_client) 시험 — 기존 전송 형식, 관측 끊김, 카메라 검증."""
 
+from contextlib import redirect_stdout
+import importlib.util
+import io
 import json
 import socket
 import subprocess
@@ -7,6 +10,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from lerobot.utils.errors import DeviceNotConnectedError
 import numpy as np
@@ -17,7 +21,9 @@ from lerobot_robot_dual_so102 import DualSO102ClientConfig
 from lerobot_robot_dual_so102.wire import decode_frame
 from lerobot_robot_dual_so102.wire import encode_observation
 from tests.fake_bus import camera
+from tests.fake_bus import patch_make_bus
 from tests.fake_bus import use_temp_calibration_root
+from tests.fake_bus import write_calibration_file
 
 SEVEN_JOINTS = (
 	'shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex',
@@ -25,6 +31,8 @@ SEVEN_JOINTS = (
 )
 FOURTEEN_KEYS = {f'{side}_{joint}.pos'
 	for side in ('left', 'right') for joint in SEVEN_JOINTS}
+# 녹화(lerobot-record)는 dataset extra 가 있어야 한다 (Pi 기본 설치에는 없다)
+HAS_DATASETS = importlib.util.find_spec('datasets') is not None
 
 
 def free_port() -> int:
@@ -147,6 +155,7 @@ class ClientTest(unittest.TestCase):
 		for broken in ('', 'not base64!', 'AAAA', 7.0):
 			with self.subTest(broken=broken):
 				self.assertIsNone(decode_frame(broken))
+		self.assertEqual(encode_observation({'cam_top': None})['cam_top'], '')
 
 	def test_connect_times_out_without_host(self) -> None:
 		"""host 가 없으면 connect_timeout_s 뒤 주소를 적은 연결 오류."""
@@ -249,6 +258,52 @@ class ClientTest(unittest.TestCase):
 		self.assertFalse(closer.is_alive())
 		self.assertFalse(client.is_connected)
 
+	@unittest.skipUnless(HAS_DATASETS, 'dataset extra 없음 (Pi 기본 설치)')
+	def test_record_one_episode_through_client(self) -> None:
+		"""공식 lerobot-record 가 client 로 한 에피소드를 녹화한다 (14키 + 카메라)."""
+		from lerobot.scripts import lerobot_record
+
+		host = self.alive_host(frame_shape=(48, 64))
+		patch_make_bus(self)
+		calibration = self.root / 'teleop'
+		for side in ('left', 'right'):
+			write_calibration_file(calibration / f'bi_so102_leader_{side}.json')
+		dataset_root = self.root / 'dataset'
+		cameras = json.dumps({'cam_top': {'type': 'opencv', 'index_or_path': 0,
+			'width': 64, 'height': 48, 'fps': 30}})
+		argv = [
+			'lerobot-record', '--robot.type=dual_so102_client',
+			'--robot.remote_ip=127.0.0.1',
+			f'--robot.port_zmq_cmd={host.cmd_port}',
+			f'--robot.port_zmq_observations={host.obs_port}',
+			f'--robot.cameras={cameras}',
+			'--teleop.type=dual_so102_leader', '--teleop.id=bi_so102_leader',
+			'--teleop.left_arm_config.port=/dev/so102_leader_left',
+			'--teleop.right_arm_config.port=/dev/so102_leader_right',
+			f'--teleop.calibration_dir={calibration}',
+			'--dataset.repo_id=local/dual_so102_test',
+			f'--dataset.root={dataset_root}', '--dataset.single_task=test',
+			'--dataset.num_episodes=1', '--dataset.episode_time_s=1',
+			'--dataset.reset_time_s=0', '--dataset.push_to_hub=false',
+			'--display_data=false', '--play_sounds=false',
+		]
+		# 시험 중 데스크톱 키 입력(→ · Esc)이 녹화를 끊지 않게 키보드 감시를 뺀다
+		events = {'exit_early': False, 'rerecord_episode': False,
+			'stop_recording': False}
+		with (patch('sys.argv', argv),
+			patch.object(lerobot_record, 'init_keyboard_listener',
+				return_value=(None, events)),
+			redirect_stdout(io.StringIO())):
+			lerobot_record.main()
+		info = json.loads((dataset_root / 'meta' / 'info.json').read_text())
+		self.assertEqual(info['robot_type'], 'dual_so102_client')
+		self.assertGreater(info['total_frames'], 0)
+		self.assertEqual(set(info['features']['observation.state']['names']),
+			FOURTEEN_KEYS)
+		self.assertIn('observation.images.cam_top', info['features'])
+		self.assertIsNotNone(host.receive_command())
+
+	@unittest.skipUnless(HAS_DATASETS, 'dataset extra 없음 (Pi 기본 설치)')
 	def test_record_help(self) -> None:
 		"""공식 lerobot-record 도움말이 client 타입과 remote_ip 를 보여 준다."""
 		result = subprocess.run([sys.executable, '-m',

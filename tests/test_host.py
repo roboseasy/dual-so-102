@@ -1,5 +1,6 @@
 """Pi host(dual-so102-host) 시험 — 기존 host 동작 · 종료 정리 · 포트 사용 중."""
 
+import json
 from pathlib import Path
 import signal
 import socket
@@ -11,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from lerobot.robots.so_follower import SOFollowerConfig
+import numpy as np
 import zmq
 
 from lerobot_robot_dual_so102 import DualSO102Client
@@ -38,6 +40,28 @@ def free_port() -> int:
 	with socket.socket() as probe:
 		probe.bind(('127.0.0.1', 0))
 		return probe.getsockname()[1]
+
+
+class FakeCamera:
+	"""프레임이 늦을 수 있는 가짜 카메라 (OpenCVCamera.read_latest 처럼 TimeoutError).
+
+	Attributes:
+		is_stalled: True 면 read_latest 가 TimeoutError 를 낸다.
+	"""
+
+	def __init__(self) -> None:
+		self.is_connected = True
+		self.is_stalled = False
+
+	def read_latest(self, max_age_ms: int = 500) -> np.ndarray:
+		"""가장 최근 프레임 (늦으면 TimeoutError)."""
+		if self.is_stalled:
+			raise TimeoutError('가짜 카메라: 프레임이 500 ms 넘게 늦음')
+		return np.full((48, 64, 3), 200, np.uint8)
+
+	def disconnect(self) -> None:
+		"""가상 해제."""
+		self.is_connected = False
 
 
 class HostTest(unittest.TestCase):
@@ -74,7 +98,67 @@ class HostTest(unittest.TestCase):
 			thread.join(timeout=5)
 		self.addCleanup(stop_host)
 		stop.stop_host = stop_host  # 시험 안에서 먼저 멈출 때
+		stop.thread = thread
 		return stop
+
+	def observation_receiver(self) -> zmq.Socket:
+		"""host 관측을 받는 소켓 (client 하나처럼)."""
+		context = zmq.Context()
+		self.addCleanup(context.term)
+		receiver = context.socket(zmq.PULL)
+		self.addCleanup(receiver.close, 0)
+		receiver.setsockopt(zmq.CONFLATE, 1)
+		receiver.connect(
+			f'tcp://127.0.0.1:{self.host_config.port_zmq_observations}')
+		return receiver
+
+	def latest_observation(self, receiver: zmq.Socket) -> dict:
+		"""host 가 보낸 가장 최근 관측."""
+		self.assertTrue(receiver.poll(3000))
+		return json.loads(receiver.recv_string())
+
+	def start_host_process(self, ignore_sighup: bool = False,
+		) -> subprocess.Popen:
+		"""가짜 버스 host 를 새 프로세스로 띄우고, 루프가 돌 때까지 기다린다.
+
+		버스를 닫으면 'BUS_DISCONNECTED <포트> <토크 해제>' 를 찍는다.
+		"""
+		calibration = self.root / 'cal'
+		write_calibration_file(calibration / 'bi_so102_left.json')
+		write_calibration_file(calibration / 'bi_so102_right.json')
+		cmd_port, obs_port = free_port(), free_port()
+		script = '\n'.join((
+			'import sys',
+			'from unittest.mock import patch',
+			'from tests.fake_bus import FakeBus',
+			'class LoudBus(FakeBus):',
+			'	def disconnect(self, disable_torque=True):',
+			'		super().disconnect(disable_torque)',
+			"		print('BUS_DISCONNECTED', self.port, disable_torque,",
+			'			flush=True)',
+			"with patch('lerobot_robot_dual_so102.arm.make_bus', LoudBus):",
+			'	from lerobot_robot_dual_so102.host import main',
+			"	sys.argv = ['dual-so102-host', '--robot.id=bi_so102',",
+			f"		'--robot.calibration_dir={calibration}',",
+			"		'--robot.left_arm_config.port=/dev/L',",
+			"		'--robot.right_arm_config.port=/dev/R',",
+			f"		'--host.port_zmq_cmd={cmd_port}',",
+			f"		'--host.port_zmq_observations={obs_port}']",
+			'	main()',
+		))
+
+		def ignore_hangup() -> None:
+			signal.signal(signal.SIGHUP, signal.SIG_IGN)  # nohup 과 같다
+		process = subprocess.Popen([sys.executable, '-c', script],
+			cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+			text=True, preexec_fn=ignore_hangup if ignore_sighup else None)
+		self.addCleanup(lambda: process.poll() is None and process.kill())
+		client = DualSO102Client(DualSO102ClientConfig(
+			remote_ip='127.0.0.1', port_zmq_cmd=cmd_port,
+			port_zmq_observations=obs_port, connect_timeout_s=30))
+		client.connect()  # host 루프가 돈다
+		client.disconnect()
+		return process
 
 	def test_host_client_roundtrip(self) -> None:
 		"""client 명령이 왼팔 버스 목표로 가고, client 는 14 관절 관측을 받는다."""
@@ -141,45 +225,94 @@ class HostTest(unittest.TestCase):
 
 	def test_sigterm_runs_cleanup(self) -> None:
 		"""SIGTERM · SIGHUP(SSH 끊김)에도 Ctrl+C 처럼 두 팔을 토크 해제하고 끝난다."""
-		calibration = self.root / 'cal'
-		write_calibration_file(calibration / 'bi_so102_left.json')
-		write_calibration_file(calibration / 'bi_so102_right.json')
 		for signum in (signal.SIGTERM, signal.SIGHUP):
 			with self.subTest(signal=signum.name):
-				cmd_port, obs_port = free_port(), free_port()
-				script = '\n'.join((
-					'import sys',
-					'from unittest.mock import patch',
-					'from tests.fake_bus import FakeBus',
-					'class LoudBus(FakeBus):',
-					'	def disconnect(self, disable_torque=True):',
-					'		super().disconnect(disable_torque)',
-					"		print('BUS_DISCONNECTED', self.port, disable_torque,",
-					'			flush=True)',
-					"with patch('lerobot_robot_dual_so102.arm.make_bus', LoudBus):",
-					'	from lerobot_robot_dual_so102.host import main',
-					"	sys.argv = ['dual-so102-host', '--robot.id=bi_so102',",
-					f"		'--robot.calibration_dir={calibration}',",
-					"		'--robot.left_arm_config.port=/dev/L',",
-					"		'--robot.right_arm_config.port=/dev/R',",
-					f"		'--host.port_zmq_cmd={cmd_port}',",
-					f"		'--host.port_zmq_observations={obs_port}']",
-					'	main()',
-				))
-				process = subprocess.Popen([sys.executable, '-c', script],
-					cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-					text=True)
-				self.addCleanup(lambda p=process: p.poll() is None and p.kill())
-				client = DualSO102Client(DualSO102ClientConfig(
-					remote_ip='127.0.0.1', port_zmq_cmd=cmd_port,
-					port_zmq_observations=obs_port, connect_timeout_s=30))
-				client.connect()  # host 루프가 돈다
-				client.disconnect()
+				process = self.start_host_process()
 				process.send_signal(signum)
 				output, _ = process.communicate(timeout=30)
 				self.assertEqual(process.returncode, 0, output)
 				self.assertIn('BUS_DISCONNECTED /dev/L True', output)
 				self.assertIn('BUS_DISCONNECTED /dev/R True', output)
+
+	def test_sighup_ignored_under_nohup(self) -> None:
+		"""nohup 처럼 SIGHUP 을 무시하게 띄운 host 는 SSH 가 끊겨도 계속 돈다."""
+		process = self.start_host_process(ignore_sighup=True)
+		process.send_signal(signal.SIGHUP)
+		time.sleep(1.0)
+		self.assertIsNone(process.poll())
+		process.send_signal(signal.SIGTERM)
+		output, _ = process.communicate(timeout=30)
+		self.assertEqual(process.returncode, 0, output)
+		self.assertIn('BUS_DISCONNECTED /dev/L True', output)
+
+	def test_camera_stall_keeps_host_and_sends_empty_frame(self) -> None:
+		"""카메라 프레임이 늦어도 host 는 끝나지 않고 그 카메라만 빈 프레임으로 보낸다."""
+		robot = self.connected_robot()
+		camera = FakeCamera()
+		robot.left_arm.cameras['cam_top'] = camera
+		robot.cameras = {'cam_top': camera}
+		robot._top_level_cam_keys = {'cam_top'}
+		receiver = self.observation_receiver()
+		with self.assertLogs('lerobot_robot_dual_so102.host', 'INFO') as logs:
+			stop = self.start_host(robot)
+			self.assertNotEqual(self.latest_observation(receiver)['cam_top'], '')
+			camera.is_stalled = True
+			time.sleep(0.5)
+			stalled = self.latest_observation(receiver)
+			self.assertEqual(stalled['cam_top'], '')
+			self.assertEqual({k for k in stalled if k.endswith('.pos')},
+				FOURTEEN_KEYS)
+			self.assertTrue(stop.thread.is_alive())
+			camera.is_stalled = False
+			time.sleep(0.3)
+			self.assertNotEqual(self.latest_observation(receiver)['cam_top'], '')
+			stop.stop_host()
+		camera_lines = [line for line in logs.output if '카메라 cam_top' in line]
+		self.assertEqual(len(camera_lines), 2, logs.output)  # 늦음 1번 · 회복 1번
+
+	def test_two_command_clients_hold_position(self) -> None:
+		"""명령 client 가 둘이면 어느 쪽도 따르지 않고, 하나로 돌아오면 다시 따른다."""
+		robot = self.connected_robot()
+		context = zmq.Context()
+		self.addCleanup(context.term)
+		senders = []
+		for pan in (10.0, -10.0):
+			sender = context.socket(zmq.PUSH)
+			self.addCleanup(sender.close, 0)
+			senders.append((sender, pan))
+
+		def send_for(seconds: float, pairs: list) -> None:
+			end = time.monotonic() + seconds
+			while time.monotonic() < end:
+				for sender, pan in pairs:
+					try:
+						sender.send_string(json.dumps({
+							**dict.fromkeys(FOURTEEN_KEYS, 0.0),
+							'left_shoulder_pan.pos': pan}), zmq.NOBLOCK)
+					except zmq.Again:
+						pass
+				time.sleep(0.02)
+
+		def left_pans() -> list[float]:
+			return [call[1]['shoulder_pan'] for call in
+				self.buses['/dev/L'].calls if call[0] == 'goal']
+
+		with self.assertLogs('lerobot_robot_dual_so102.host', 'INFO') as logs:
+			stop = self.start_host(robot)
+			for sender, _ in senders:
+				sender.connect(f'tcp://127.0.0.1:{self.host_config.port_zmq_cmd}')
+			time.sleep(0.3)  # 두 연결이 잡힐 때까지
+			send_for(0.5, senders)
+			self.assertEqual(left_pans(), [])
+			senders[1][0].close(linger=0)
+			time.sleep(0.3)
+			send_for(0.5, senders[:1])
+			stop.stop_host()
+		self.assertIn(10.0, left_pans())
+		self.assertNotIn(-10.0, left_pans())
+		crowded = [line for line in logs.output
+			if line.startswith('ERROR') and '명령 client' in line]
+		self.assertEqual(len(crowded), 1, logs.output)
 
 	def test_port_in_use_fails_before_robot_connect(self) -> None:
 		"""기존 host 가 포트를 잡고 있으면 팔을 건드리기 전에 포트를 적은 오류."""

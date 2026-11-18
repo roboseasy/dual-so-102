@@ -21,15 +21,18 @@ def encode_observation(
 	"""관측을 전송 형식으로 바꾼다.
 
 	Args:
-		observation: 로봇 관측 (관절키 → 숫자, 카메라이름 → HxWx3 배열).
+		observation: 로봇 관측 (관절키 → 숫자, 카메라이름 → HxWx3 배열,
+			이번에 못 읽은 프레임은 None).
 		jpeg_quality: JPEG 품질 (기존 host 와 같은 90).
 
 	Returns:
-		관절값은 float, 프레임은 base64 JPEG 문자열(실패하면 "")인 dict.
+		관절값은 float, 프레임은 base64 JPEG 문자열(없거나 실패하면 "")인 dict.
 	"""
 	encoded: dict[str, float | str] = {}
 	for key, value in observation.items():
-		if isinstance(value, np.ndarray):
+		if value is None:
+			encoded[key] = ''
+		elif isinstance(value, np.ndarray):
 			is_ok, buffer = cv2.imencode('.jpg', value,
 				[int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
 			encoded[key] = (base64.b64encode(buffer).decode('ascii')

@@ -46,8 +46,8 @@ class DualSO102ClientConfig(RobotConfig):
 	(PC 는 카메라를 열지 않고, 녹화 데이터셋의 모양을 정하는 데만 쓴다).
 
 	Attributes:
-		remote_ip: Pi 주소. 유선 10.42.0.78, AP 모드 192.168.4.1,
-			공유기 모드는 그 공유기가 준 주소 (setip 하면 192.168.0.(100+킷 번호)).
+		remote_ip: Pi 주소. AP 모드 192.168.4.1, 유선 · 공유기 모드는 Pi 에서
+			hostname -I 로 확인 (예: 10.42.0.78, setip 하면 192.168.0.(100+킷 번호)).
 		port_zmq_cmd: 명령 포트 (host 와 같게).
 		port_zmq_observations: 관측 포트 (host 와 같게).
 		polling_timeout_ms: 수신 스레드가 한 번에 기다리는 시간.

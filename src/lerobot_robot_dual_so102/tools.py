@@ -12,6 +12,7 @@ LeRobot 0.6.0 의 lerobot-setup-motors · lerobot-find-joint-limits 는 정해�
 import argparse
 from dataclasses import dataclass
 import glob
+import os
 from typing import Final
 
 from lerobot.motors import Motor
@@ -48,6 +49,36 @@ class PortReport:
 	ids: list[int]
 	voltage: float | None
 	error: str | None = None
+
+
+def port_users(port: str) -> list[int]:
+	"""그 포트를 열어 둔 다른 프로세스 번호 (/proc 에서 찾는다, 이 프로세스는 뺀다).
+
+	host · 텔레옵이 쓰는 포트를 같이 열면 서보 응답을 가로채 그 프로그램이
+	끝나고 두 팔 토크가 풀린다. 그래서 판별 전에 확인한다.
+
+	Args:
+		port: 시리얼 포트 (별칭이어도 된다).
+
+	Returns:
+		프로세스 번호 목록 (못 읽는 다른 사용자 프로세스는 빠진다).
+	"""
+	target = os.path.realpath(port)
+	users = []
+	try:
+		entries = [entry for entry in os.scandir('/proc')
+			if entry.name.isdigit() and int(entry.name) != os.getpid()]
+	except OSError:
+		return users
+	for entry in entries:
+		try:
+			links = [os.readlink(fd.path)
+				for fd in os.scandir(f'/proc/{entry.name}/fd')]
+		except OSError:
+			continue  # 끝난 프로세스 · 다른 사용자 프로세스
+		if target in links:
+			users.append(int(entry.name))
+	return users
 
 
 def probe_port(port: str) -> PortReport:
@@ -155,6 +186,12 @@ def check_main(argv: list[str] | None = None) -> int:
 		return 1
 	is_all_ok = True
 	for port in ports:
+		users = port_users(port)
+		if users:
+			is_all_ok = False
+			print(f'{port}  사용 중 (pid {",".join(map(str, users))}) — '
+				'host · 텔레옵을 끄고 다시 실행하세요 (열지 않았습니다)')
+			continue
 		report = probe_port(port)
 		if report.error is not None:
 			is_all_ok = False
