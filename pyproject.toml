@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_dual_so102"
+version = "0.1.0"
+description = "Roboseasy SO-102 seven-joint dual-arm plugin for LeRobot (follower, leader, Pi host/client)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+	"lerobot[feetech]==0.6.0",
+	"pyzmq>=26",
+]
+
+[project.optional-dependencies]
+# PC 용: 녹화(dataset) · 시각화(rerun) 포함. Pi host 는 기본 의존성만으로 돈다
+dual-so-102 = ["lerobot[core_scripts,feetech]==0.6.0"]
+
+[project.scripts]
+dual-so102-host = "lerobot_robot_dual_so102.host:main"
+dual-so102-check = "lerobot_robot_dual_so102.tools:check_main"
+dual-so102-setup-motors = "lerobot_robot_dual_so102.tools:setup_motors_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
