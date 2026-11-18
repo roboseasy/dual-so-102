@@ -43,20 +43,22 @@ def free_port() -> int:
 
 
 class FakeCamera:
-	"""프레임이 늦을 수 있는 가짜 카메라 (OpenCVCamera.read_latest 처럼 TimeoutError).
+	"""늦거나 빠질 수 있는 가짜 카메라 (OpenCVCamera.read_latest 와 같은 예외).
 
 	Attributes:
-		is_stalled: True 면 read_latest 가 TimeoutError 를 낸다.
+		is_stalled: True 면 read_latest 가 failure 를 낸다.
+		failure: 늦음은 TimeoutError, USB 가 빠져 읽기 스레드가 멈추면 RuntimeError.
 	"""
 
-	def __init__(self) -> None:
+	def __init__(self, failure: Exception | None = None) -> None:
 		self.is_connected = True
 		self.is_stalled = False
+		self.failure = failure or TimeoutError('가짜 카메라: 프레임이 500 ms 넘게 늦음')
 
 	def read_latest(self, max_age_ms: int = 500) -> np.ndarray:
-		"""가장 최근 프레임 (늦으면 TimeoutError)."""
+		"""가장 최근 프레임 (멈췄으면 failure)."""
 		if self.is_stalled:
-			raise TimeoutError('가짜 카메라: 프레임이 500 ms 넘게 늦음')
+			raise self.failure
 		return np.full((48, 64, 3), 200, np.uint8)
 
 	def disconnect(self) -> None:
@@ -246,9 +248,22 @@ class HostTest(unittest.TestCase):
 		self.assertIn('BUS_DISCONNECTED /dev/L True', output)
 
 	def test_camera_stall_keeps_host_and_sends_empty_frame(self) -> None:
-		"""카메라 프레임이 늦어도 host 는 끝나지 않고 그 카메라만 빈 프레임으로 보낸다."""
+		"""카메라가 늦거나 빠져도 host 는 끝나지 않고 그 카메라만 빈 프레임으로 보낸다.
+
+		실장비(2026-11-18): Pi USB 가 흔들려 카메라 3대가 빠지자 읽기 스레드가 멈추고
+		(RuntimeError) host 가 끝나 두 팔 토크가 풀렸다.
+		"""
+		for failure in (TimeoutError('늦음'),
+			RuntimeError('OpenCVCamera(/dev/cam_top) read thread is not running.')):
+			with self.subTest(failure=type(failure).__name__):
+				self.check_camera_failure_keeps_host(failure)
+
+	def check_camera_failure_keeps_host(self, failure: Exception) -> None:
+		"""카메라 하나가 failure 를 내는 동안과 회복 뒤의 host 관측을 본다."""
+		self.host_config = DualSO102HostConfig(port_zmq_cmd=free_port(),
+			port_zmq_observations=free_port())
 		robot = self.connected_robot()
-		camera = FakeCamera()
+		camera = FakeCamera(failure)
 		robot.left_arm.cameras['cam_top'] = camera
 		robot.cameras = {'cam_top': camera}
 		robot._top_level_cam_keys = {'cam_top'}

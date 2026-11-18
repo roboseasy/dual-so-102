@@ -65,6 +65,7 @@ dual-so102-check
 
 팔을 받친 상태에서 안내를 따릅니다. 왼팔을 먼저, 이어서 오른팔을 보정합니다.
 
+리더암 (내 PC)
 ```bash
 lerobot-calibrate \
   --robot.type=dual_so102_follower \
@@ -72,6 +73,11 @@ lerobot-calibrate \
   --robot.left_arm_config.port=/dev/so102_follower_left \
   --robot.right_arm_config.port=/dev/so102_follower_right
 
+```
+
+
+팔로워암 (라즈베리파이)
+```bash
 lerobot-calibrate \
   --teleop.type=dual_so102_leader \
   --teleop.id=bi_so102_leader \

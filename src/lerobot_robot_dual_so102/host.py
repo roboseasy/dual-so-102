@@ -5,7 +5,7 @@
 - 포트를 먼저 잡는다. 기존 host 가 아직 돌고 있으면 팔을 건드리기 전에 멈춘다.
 - SIGTERM · SIGHUP(SSH 끊김)도 Ctrl+C 처럼 정리(버스 · 카메라 해제, 토크 해제)한다.
 	nohup 처럼 SIGHUP 을 무시하게 띄웠으면 그대로 둔다.
-- 카메라 프레임이 늦으면 그 카메라만 빈 프레임으로 보낸다 (host 는 계속 돈다).
+- 카메라 프레임이 늦거나 카메라가 빠지면 그 카메라만 빈 프레임으로 보낸다 (host 는 계속 돈다).
 - 명령 client 가 둘 이상 붙으면 명령을 따르지 않고 자세를 유지한다.
 
 	dual-so102-host --robot.id=bi_so102 \\
@@ -139,7 +139,7 @@ def run_host(
 	  남기고 새 목표를 쓰지 않는다 (마지막 자세 유지).
 	- 관측 읽기 실패(ConnectionError)는 그 주기만 건너뛰고, 연속
 	  MAX_CONSECUTIVE_READ_FAILURES 번이면 오류를 남기고 다시 던진다.
-	- 카메라 프레임이 늦으면(TimeoutError) 그 카메라만 빈 프레임으로 보낸다.
+	- 카메라를 읽지 못하면(늦음 · 빠짐) 그 카메라만 빈 프레임으로 보낸다.
 	- 받는 client 가 없으면 관측을 버리고, 붙으면 다시 보낸다.
 	- 명령 client 가 둘 이상이면 명령을 따르지 않고 자세를 유지한다.
 
@@ -165,12 +165,12 @@ def run_host(
 
 
 def _tolerate_camera_stalls(robot: DualSO102Follower) -> None:
-	"""카메라 프레임이 늦으면(TimeoutError) 그 카메라만 None(빈 프레임)으로 읽게 한다.
+	"""카메라를 읽지 못하면 그 카메라만 None(빈 프레임)으로 읽게 한다.
 
-	카메라 하나가 잠깐 늦었다고 host 가 끝나 두 팔 토크가 풀리면 안 된다.
-	client 는 빈 프레임을 직전 프레임으로 메우고, 계속 오지 않으면
-	stale_timeout_s 뒤 멈춘다 (그동안 host 는 자세를 유지한다).
-	카메라 스레드가 죽는 등 다른 오류는 그대로 낸다.
+	프레임이 늦거나(TimeoutError) USB 가 빠져 읽기 스레드가 멈춰도(RuntimeError)
+	host 가 끝나 두 팔 토크가 풀리면 안 된다 (실장비에서 Pi USB 가 흔들려 카메라
+	3대가 한꺼번에 빠졌다). client 는 빈 프레임을 직전 프레임으로 메우고, 계속
+	오지 않으면 stale_timeout_s 뒤 멈춘다 (그동안 host 는 자세를 유지한다).
 
 	Args:
 		robot: 카메라를 연 양팔 (같은 카메라 객체를 팔이 읽는다).
@@ -184,10 +184,10 @@ def _tolerate_camera_stalls(robot: DualSO102Follower) -> None:
 			_name: str = name, **kwargs: object) -> np.ndarray | None:
 			try:
 				frame = _read(*args, **kwargs)
-			except TimeoutError as error:
+			except Exception as error:  # 카메라 고장이 팔 정리로 번지지 않게
 				if _name not in stalled:
 					stalled.add(_name)
-					logger.warning(f'카메라 {_name} 프레임이 늦어 빈 프레임으로 '
+					logger.warning(f'카메라 {_name} 를 읽지 못해 빈 프레임으로 '
 						f'보냅니다: {error}')
 				return None
 			if _name in stalled:
