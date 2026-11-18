@@ -80,6 +80,26 @@ class ArmTest(unittest.TestCase):
 		self.assertEqual(read_packet.call_count, 3)
 		self.assertEqual(write_packet.call_count, 3)
 
+	def test_register_writes_retry_twice_by_default(self) -> None:
+		"""연결 때 쓰는 레지스터 쓰기 · 토크 켜기도 3번 한다 (같은 값이라 다시 써도 안전).
+
+		실장비(2026-11-18): host 연결 중 Torque_Enable 쓰기 한 번이 'Incorrect status
+		packet' 으로 실패해 연결 전체가 끝났다. 바로 다음 판별에서는 두 팔 모두 정상.
+		"""
+		bus = make_bus('/dev/x', True, {})
+		bus.port_handler.is_open = True  # 포트를 열지 않고 연결된 상태로
+		self.addCleanup(setattr, bus.port_handler, 'is_open', False)
+		for name, action in (
+			('write', lambda: bus.write('P_Coefficient', 'gripper', 16)),
+			('enable_torque', lambda: bus.enable_torque('gripper')),
+		):
+			with self.subTest(call=name):
+				with patch.object(bus.packet_handler, 'writeTxRx',
+					return_value=(scs.COMM_RX_CORRUPT, 0)) as write_packet:
+					with self.assertRaises(ConnectionError):
+						action()
+				self.assertEqual(write_packet.call_count, 3)
+
 	@unittest.skipIf(os.geteuid() == 0, 'root 는 배타 포트도 열 수 있다')
 	def test_bus_holds_port_exclusively(self) -> None:
 		"""연결한 버스의 포트는 다른 프로그램이 열 수 없고, 닫으면 다시 열린다.

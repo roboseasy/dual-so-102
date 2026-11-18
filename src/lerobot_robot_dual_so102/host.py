@@ -309,14 +309,44 @@ def main(cfg: DualSO102ServerConfig) -> None:
 	with HostSockets(cfg.host) as sockets:
 		robot = DualSO102Follower(cfg.robot)
 		logger.info(f'{robot} 연결 중')
-		robot.connect()
 		try:
+			robot.connect()
 			run_host(robot, cfg.host, sockets=sockets)
 		except KeyboardInterrupt as interrupt:
 			logger.info(f'종료 신호({interrupt or "Ctrl+C"})를 받아 정리합니다.')
 		finally:
-			robot.disconnect()
+			_release_robot(robot)
 	logger.info('dual-so102-host 를 끝냈습니다.')
+
+
+def _release_robot(robot: DualSO102Follower) -> None:
+	"""팔마다 따로 버스(토크 해제) · 카메라를 닫는다. 한 팔이 실패해도 다른 팔은 닫는다.
+
+	연결이 중간에 실패해 한 팔만 연결됐거나, 한 팔 보드가 빠진 채 끝날 때도 쓴다.
+	공식 양팔 disconnect 는 왼팔에서 예외가 나면 오른팔을 건너뛰고, 정리 없이
+	끝나면 카메라 읽기 스레드가 남아 프로세스가 abort 로 끝난다 (실장비에서 확인).
+
+	Args:
+		robot: 일부만 연결됐을 수도 있는 양팔.
+	"""
+	for arm in (robot.left_arm, robot.right_arm):
+		if arm.bus.is_connected:
+			try:
+				arm.bus.disconnect(arm.config.disable_torque_on_disconnect)
+			except Exception as error:
+				logger.error(f'{arm} 토크를 풀지 못했습니다 — 그 팔을 받치고 12 V '
+					f'전원을 끄세요: {error}')
+				try:
+					arm.bus.port_handler.closePort()
+				except Exception:
+					pass  # 포트가 이미 사라졌다
+		for name, camera in arm.cameras.items():
+			if camera.is_connected:
+				try:
+					camera.disconnect()
+				except Exception as error:
+					logger.error(f'카메라 {name} 를 닫지 못했습니다: {error}')
+	logger.info(f'{robot} 정리를 마쳤습니다.')
 
 
 if __name__ == '__main__':
