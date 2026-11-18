@@ -19,6 +19,8 @@ dual-so-102 = ["lerobot[core_scripts,feetech]==0.6.0"]
 
 [project.scripts]
 dual-so102-host = "lerobot_robot_dual_so102.host:main"
+dual-so102-check = "lerobot_robot_dual_so102.tools:check_main"
+dual-so102-setup-motors = "lerobot_robot_dual_so102.tools:setup_motors_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
