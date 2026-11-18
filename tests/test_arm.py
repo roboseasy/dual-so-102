@@ -86,8 +86,12 @@ class ArmTest(unittest.TestCase):
 		script = '\n'.join((
 			'from lerobot.robots import RobotConfig',
 			'from lerobot.teleoperators import TeleoperatorConfig',
+			# 이 패키지가 끌어오는 공식 모듈은 자기 이름(so100_* · bi_so_* 등)을
+			# 스스로 등록하므로 기준에 먼저 넣는다
 			'import lerobot.robots.so_follower',
+			'import lerobot.robots.bi_so_follower',
 			'import lerobot.teleoperators.so_leader',
+			'import lerobot.teleoperators.bi_so_leader',
 			'def known():',
 			'	return (set(RobotConfig.get_known_choices())',
 			'		| set(TeleoperatorConfig.get_known_choices()))',

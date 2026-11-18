@@ -6,6 +6,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -160,3 +161,49 @@ def use_temp_calibration_root(test: unittest.TestCase) -> Path:
 		patcher.start()
 		test.addCleanup(patcher.stop)
 	return root
+
+
+def patch_make_bus(test: unittest.TestCase,
+	initial_values: dict[str, dict[str, float]] | None = None,
+	) -> dict[str, FakeBus]:
+	"""시험 동안 `arm.make_bus` 를 FakeBus 로 바꾼다.
+
+	Args:
+		test: 정리(cleanup)를 맡길 시험.
+		initial_values: 포트 → 처음 위치 (일부 관절만 줘도 된다).
+
+	Returns:
+		포트 → 만들어진 FakeBus (만들 때마다 채워진다).
+	"""
+	buses: dict[str, FakeBus] = {}
+
+	def make_fake_bus(port: str, use_degrees: bool,
+		calibration: dict[str, MotorCalibration],
+		is_mirror: bool = False) -> FakeBus:
+		bus = FakeBus(port, use_degrees, calibration, is_mirror)
+		bus.values.update((initial_values or {}).get(port, {}))
+		buses[port] = bus
+		return bus
+
+	patcher = patch('lerobot_robot_dual_so102.arm.make_bus', make_fake_bus)
+	patcher.start()
+	test.addCleanup(patcher.stop)
+	return buses
+
+
+def write_calibration_file(path: Path, range_min: int = 1000,
+	range_max: int = 3000) -> None:
+	"""LeRobot 형식의 7관절 보정 파일을 쓴다 (폴더도 만든다).
+
+	Args:
+		path: 보정 파일 경로 (예: .../so102_follower/bi_so102_left.json).
+		range_min: 모든 관절의 최소 위치.
+		range_max: 모든 관절의 최대 위치.
+	"""
+	data = {
+		name: {'id': index, 'drive_mode': 0, 'homing_offset': 0,
+			'range_min': range_min, 'range_max': range_max}
+		for index, name in enumerate(JOINTS, 1)
+	}
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(json.dumps(data, indent=4))
