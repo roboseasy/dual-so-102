@@ -39,7 +39,9 @@ class SO102Bus(FeetechMotorsBus):
 	공식 버스와 세 가지가 다르다.
 	- 연결한 포트를 배타로 잡는다. 다른 프로그램(포트 판별 · 두 번째 host 등)이
 	  같은 포트를 열면 서보 응답을 가로채 host 가 끝나고 토크가 풀린다.
-	- sync_read · sync_write 의 재시도 기본값이 BUS_NUM_RETRY 다.
+	- 읽기 · 쓰기 · 토크 켜기/끄기의 재시도 기본값이 BUS_NUM_RETRY 다. 공식은 0 이라
+	  연결 중 순간 오류 한 번(Incorrect status packet)에 연결 전체가 실패했다 (실장비).
+	  같은 값을 다시 쓰는 것이라 안전하다 (모터 ID 쓰기는 내부 _write 라 해당 없음).
 	- 미러 버스는 도 단위에서도 MIRROR_JOINTS 의 drive_mode 로 부호를 뒤집는다.
 	  LeRobot 은 -100~100 · 0~100 단위에서만 drive_mode 를 쓰고 도 단위에서는
 	  무시한다. 같은 기준(보정 범위 가운데)으로 뒤집고, 대상을 MIRROR_JOINTS 로
@@ -98,6 +100,41 @@ class SO102Bus(FeetechMotorsBus):
 		flipped = {motor_id: -value if self._is_mirrored_degrees(motor_id)
 			else value for motor_id, value in ids_values.items()}
 		return super()._unnormalize(flipped)
+
+	def read(
+		self,
+		data_name: str,
+		motor: str,
+		*,
+		normalize: bool = True,
+		num_retry: int = BUS_NUM_RETRY,
+	) -> float:
+		"""공식 read 와 같다. 재시도 기본값만 BUS_NUM_RETRY 다."""
+		return super().read(data_name, motor, normalize=normalize,
+			num_retry=num_retry)
+
+	def write(
+		self,
+		data_name: str,
+		motor: str,
+		value: float,
+		*,
+		normalize: bool = True,
+		num_retry: int = BUS_NUM_RETRY,
+	) -> None:
+		"""공식 write 와 같다. 재시도 기본값만 BUS_NUM_RETRY 다."""
+		super().write(data_name, motor, value, normalize=normalize,
+			num_retry=num_retry)
+
+	def enable_torque(self, motors: str | list[str] | None = None,
+		num_retry: int = BUS_NUM_RETRY) -> None:
+		"""공식 enable_torque 와 같다. 재시도 기본값만 BUS_NUM_RETRY 다."""
+		super().enable_torque(motors, num_retry)
+
+	def disable_torque(self, motors: str | list[str] | None = None,
+		num_retry: int = BUS_NUM_RETRY) -> None:
+		"""공식 disable_torque 와 같다. 재시도 기본값만 BUS_NUM_RETRY 다."""
+		super().disable_torque(motors, num_retry)
 
 	def sync_read(
 		self,

@@ -59,7 +59,7 @@ dual-so102-check
 
 왼팔 · 오른팔은 이것으로 알 수 없으므로 한 팔씩 뽑아 보며 확인하고, udev 별칭
 `/dev/so102_{follower,leader}_{left,right}` 을 만듭니다 → [USB 포트 고정](docs/2.ports.md).
-아래 예시는 모두 이 별칭을 씁니다.
+3 · 4절 예시는 이 별칭을 씁니다.
 
 ## 3. 보정
 
@@ -107,9 +107,18 @@ lerobot-teleoperate \
   --display_data=false
 ```
 
-## 5. Pi 분리 — 팔로워 · 카메라는 Pi, 리더는 PC
+## 5. Pi 분리 — 라즈베리파이 · PC 에서 칠 명령
 
-Pi 에서 host 를 띄웁니다 (카메라 3대를 MJPG 로 엽니다).
+팔로워 양팔 · 카메라 3대는 라즈베리파이에, 리더 양팔은 PC 에 꽂습니다. Pi 에서 host 를 먼저 띄우고, PC 에서는
+로봇 타입만 `dual_so102_client` 로 바꿔 공식 명령을 씁니다. 주소 · 포트는 키트 1호(유선 연결) 기준 예시입니다.
+
+### 라즈베리파이 (팔로워 · 카메라)
+
+PC 에서 접속합니다 (유선 `10.42.0.78`, AP 모드면 `192.168.4.1`). 로그인하면 `lerobot060_venv` 가 켜집니다.
+
+```bash
+ssh roboseasy@10.42.0.78
+```
 
 ```bash
 dual-so102-host \
@@ -119,57 +128,71 @@ dual-so102-host \
   --robot.cameras='{"cam_top": {"type": "opencv", "index_or_path": "/dev/cam_top", "width": 640, "height": 480, "fps": 30, "fourcc": "MJPG", "warmup_s": 3}, "cam_left": {"type": "opencv", "index_or_path": "/dev/cam_left", "width": 640, "height": 480, "fps": 30, "fourcc": "MJPG", "warmup_s": 3}, "cam_right": {"type": "opencv", "index_or_path": "/dev/cam_right", "width": 640, "height": 480, "fps": 30, "fourcc": "MJPG", "warmup_s": 3}}'
 ```
 
-PC 에서는 로봇 타입만 `dual_so102_client` 로 바꿉니다. `--robot.remote_ip` 는 Pi 주소입니다.
+- `명령을 기다립니다` 가 찍히면 준비된 것입니다. 연결될 때 팔을 받쳐 주세요.
+- 기본은 리더와 같은 쪽을 그대로 따라 합니다. 거울 모드는 끝에 `--robot.mirror_mode=true` 를 붙입니다.
+- `Ctrl+C` 로 끝내면 토크가 풀리니 팔을 받칩니다. SSH 가 끊겨도 계속 돌게 하려면 `tmux` 안에서 실행합니다.
+- 다른 host 가 이미 돌고 있으면 팔을 건드리지 않고 `포트 5555 사용 중` 으로 멈춥니다. 그 host 를 먼저 끕니다.
+- 코드를 갱신할 때만 `cd ~/workspace/dual-so-102 && git pull` 을 합니다.
+
+### PC (리더) — `conda activate lerobot`
+
+**텔레옵:**
 
 ```bash
 lerobot-teleoperate \
   --robot.type=dual_so102_client \
-  --robot.remote_ip=192.168.4.1 \
+  --robot.remote_ip=10.42.0.78 \
   --teleop.type=dual_so102_leader \
   --teleop.id=bi_so102_leader \
-  --teleop.left_arm_config.port=/dev/so102_leader_left \
-  --teleop.right_arm_config.port=/dev/so102_leader_right \
+  --teleop.left_arm_config.port=/dev/bi_so102_leaders_left \
+  --teleop.right_arm_config.port=/dev/bi_so102_leaders_right \
   --display_data=false
 ```
 
-| PC ↔ Pi 연결 | `--robot.remote_ip` |
-|---|---|
-| Pi 의 AP 모드 와이파이(`dualso102-NN`)에 PC 접속 | `192.168.4.1` |
-| 유선(PC 의 "다른 컴퓨터와 공유" 연결) | Pi 에서 `hostname -I` 로 확인 (예: `10.42.0.78`) |
-| 같은 공유기 | Pi 에서 `hostname -I` 로 확인, `setip <킷 번호>` 로 고정하면 `192.168.0.(100+킷 번호)` |
-
-카메라 · 미러 모드 · 운용 규칙은 [Pi 분리 구성](docs/3.pi.md)에 있습니다.
-
-## 6. 녹화 · 재생 · 추론
-
-PC 에서 녹화합니다. `--robot.cameras` 는 host 와 같은 이름 · 크기를 적습니다 (PC 는 카메라를 열지 않으므로
-`index_or_path` 는 아무 값이나 됩니다). 학습 · 추론 명령은 [사용법](docs/1.usage.md)에 있습니다.
+**녹화** — 카메라 이름 · 크기는 Pi 와 같게 적습니다 (PC 는 카메라를 열지 않으므로 `index_or_path` 는 아무 값이나 됩니다).
 
 ```bash
-HF_USER=my_name  # Hugging Face 아이디 (올리지 않으면 아무 이름)
-
 lerobot-record \
   --robot.type=dual_so102_client \
-  --robot.remote_ip=192.168.4.1 \
+  --robot.remote_ip=10.42.0.78 \
   --robot.cameras='{"cam_top": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}, "cam_left": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}, "cam_right": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
   --teleop.type=dual_so102_leader \
   --teleop.id=bi_so102_leader \
-  --teleop.left_arm_config.port=/dev/so102_leader_left \
-  --teleop.right_arm_config.port=/dev/so102_leader_right \
-  --dataset.repo_id=${HF_USER}/dual_so102_test \
+  --teleop.left_arm_config.port=/dev/bi_so102_leaders_left \
+  --teleop.right_arm_config.port=/dev/bi_so102_leaders_right \
+  --dataset.repo_id=local/dual_so102_pick \
   --dataset.single_task="블록을 상자에 넣기" \
-  --dataset.num_episodes=1 \
+  --dataset.num_episodes=10 \
   --dataset.episode_time_s=30 \
   --dataset.reset_time_s=10 \
   --dataset.push_to_hub=false \
   --display_data=true
+```
 
+**재생** — LeRobot 0.6.0 은 녹화할 때마다 이름 끝에 날짜 · 시각을 붙여 저장합니다
+(예: 폴더 `~/.cache/huggingface/lerobot/local/dual_so102_pick_20261118_211947`). 재생 · 학습에는 붙은 이름까지 씁니다.
+
+```bash
 lerobot-replay \
   --robot.type=dual_so102_client \
-  --robot.remote_ip=192.168.4.1 \
-  --dataset.repo_id=${HF_USER}/dual_so102_test \
+  --robot.remote_ip=10.42.0.78 \
+  --dataset.repo_id=local/dual_so102_pick_20261118_211947 \
   --dataset.episode=0
 ```
+
+- `--robot.remote_ip` 는 PC 와 Pi 를 잇는 방식에 따라 다릅니다.
+
+  | PC ↔ Pi 연결 | `--robot.remote_ip` |
+  |---|---|
+  | 유선 (PC 의 "다른 컴퓨터와 공유" 연결) | Pi 에서 `hostname -I` 로 확인 (키트 1호: `10.42.0.78`) |
+  | Pi 의 AP 모드 와이파이(`dualso102-NN`)에 PC 접속 | `192.168.4.1` |
+  | 같은 공유기 | Pi 에서 `hostname -I` 로 확인. Pi 에서 `setip <킷 번호>` 를 하면 `192.168.0.(100+킷 번호)` 로 고정 |
+
+- 리더 포트는 Physical Labs 앱이 PC 에 만든 별칭(`/dev/bi_so102_leaders_*`)입니다. [USB 포트 고정](docs/2.ports.md)의
+  예시 규칙으로 만들었다면 `/dev/so102_leader_left` · `/dev/so102_leader_right` 입니다.
+- 처음 실행하기 전에 리더를 팔로워와 비슷한 자세로 맞춥니다.
+- Hugging Face 에 올리려면 `--dataset.repo_id=<HF 아이디>/dual_so102_pick` 과 `--dataset.push_to_hub=true` 를 씁니다.
+  학습 · 추론은 [사용법](docs/1.usage.md), 카메라 · 운용 규칙은 [Pi 분리 구성](docs/3.pi.md)에 있습니다.
 
 ## 안전
 
@@ -187,6 +210,17 @@ lerobot-replay \
 
 ## 검증 기록
 
-- 가짜 버스 시험(공식 LeRobot 명령 · 파서 · 제어 루프를 그대로 돌리고 시리얼만 가짜):
-  PC LeRobot 0.6.0 에서 통과.
-- 실장비 검증은 아직 하지 않았습니다.
+- 가짜 버스 시험 50개(공식 LeRobot 명령 · 파서 · 제어 루프를 그대로 돌리고 시리얼만 가짜): PC LeRobot 0.6.0
+  (`so-102` 플러그인이 같이 있는 환경 · 없는 환경)과 Pi(기존 코드를 덮어쓴 LeRobot 과 같이 설치) 모두 통과.
+  Pi 기본 설치에는 녹화 패키지가 없어 녹화 시험 6개는 건너뜁니다.
+- 실장비 (2026-11-18, 키트 1호: Pi 4 에 팔로워 2 + 카메라 3, PC 에 리더 2, 유선 연결):
+  - `dual-so102-check` — Pi 팔로워 2대, PC 리더 2대 모두 `ids=1..7 OK`.
+  - 기존 양팔 코드의 host + 새 `dual_so102_client` — 관절 14개 · 카메라 3대를 받고 텔레옵 동작 (전송 형식 호환).
+  - 새 `dual-so102-host`(카메라 3대 MJPG) + PC client — 텔레옵 60초, 녹화 1 에피소드(597 프레임 · 30 fps ·
+    카메라 3대), replay.
+  - Pi 팔로워의 기존 보정 파일(`bi_so102_{left,right}.json`)을 다시 보정하지 않고 그대로 사용.
+  - host 를 `kill -TERM` 으로 끝내면 카메라 · 두 팔 버스를 정리(토크 해제)하고 종료 코드 0.
+  - 실장비에서 찾아 고친 것: Pi USB 가 흔들려 카메라가 빠지면 host 가 끝나 토크가 풀리던 문제, 연결 중 순간
+    통신 오류 한 번에 연결이 실패하고 정리 없이 끝나던 문제, 녹화 이름에 붙는 날짜 · 시각을 몰랐던 문서.
+- 아직 실장비로 확인하지 않은 것: PC 직결(팔 4개를 PC 에), 새 host 의 미러 모드(기존 host 에서는 동작),
+  `lerobot-rollout` 추론.

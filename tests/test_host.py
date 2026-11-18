@@ -22,6 +22,7 @@ from lerobot_robot_dual_so102 import DualSO102FollowerConfig
 from lerobot_robot_dual_so102.config import DualSO102HostConfig
 from lerobot_robot_dual_so102.host import main
 from lerobot_robot_dual_so102.host import run_host
+from tests.fake_bus import FakeBus
 from tests.fake_bus import patch_make_bus
 from tests.fake_bus import use_temp_calibration_root
 from tests.fake_bus import write_calibration_file
@@ -328,6 +329,60 @@ class HostTest(unittest.TestCase):
 		crowded = [line for line in logs.output
 			if line.startswith('ERROR') and '명령 client' in line]
 		self.assertEqual(len(crowded), 1, logs.output)
+
+	def host_argv(self) -> list[str]:
+		"""main() 에 줄 명령줄 (가짜 버스 포트 · 빈 포트)."""
+		return ['dual-so102-host', '--robot.id=bi_so102',
+			'--robot.left_arm_config.port=/dev/L',
+			'--robot.right_arm_config.port=/dev/R',
+			f'--host.port_zmq_cmd={self.host_config.port_zmq_cmd}',
+			f'--host.port_zmq_observations='
+			f'{self.host_config.port_zmq_observations}']
+
+	def run_main(self) -> None:
+		"""main() 을 이 프로세스에서 돌린다 (신호 처리기 · 로깅 설정은 남기지 않는다)."""
+		with (patch('sys.argv', self.host_argv()),
+			patch('lerobot_robot_dual_so102.host.signal.signal'),
+			patch('lerobot_robot_dual_so102.host.init_logging')):
+			main()
+
+	def test_partial_connect_releases_connected_arm(self) -> None:
+		"""한 팔이 연결 중 실패해도 이미 연 팔 · 버스는 토크를 풀고 닫은 뒤 오류로 끝난다.
+
+		실장비(2026-11-18): 오른쪽 연결 실패 뒤 정리 없이 끝나 카메라 스레드가 남은 채
+		C++ abort(코어 덤프)가 났다.
+		"""
+		original_write = FakeBus.write
+
+		def write(bus: FakeBus, *args: object, **kwargs: object) -> None:
+			if bus.port == '/dev/R':
+				raise ConnectionError("Failed to write 'Torque_Enable' on id_=2")
+			original_write(bus, *args, **kwargs)
+		calls_at_raise: dict[str, list] = {}
+		with patch.object(FakeBus, 'write', write):
+			try:
+				self.run_main()
+			except ConnectionError:
+				# 예외가 살아 있는 동안 = 로봇 객체가 아직 살아 있다. 여기서 보아야
+				# 가비지 수집(Robot.__del__)이 대신 정리한 것과 구별된다
+				calls_at_raise = {port: list(bus.calls)
+					for port, bus in self.buses.items()}
+		self.assertIn(('disconnect', True), calls_at_raise['/dev/L'])
+		self.assertIn(('disconnect', True), calls_at_raise['/dev/R'])
+
+	def test_cleanup_releases_right_arm_when_left_fails(self) -> None:
+		"""끝낼 때 왼팔 정리가 실패해도 오른팔은 토크를 풀고 닫는다."""
+		original_disconnect = FakeBus.disconnect
+
+		def disconnect(bus: FakeBus, disable_torque: bool = True) -> None:
+			if bus.port == '/dev/L':
+				raise ConnectionError('왼팔 보드가 빠짐')
+			original_disconnect(bus, disable_torque)
+		with patch('lerobot_robot_dual_so102.host.run_host',
+			side_effect=KeyboardInterrupt), patch.object(FakeBus, 'disconnect',
+			disconnect):
+			self.run_main()
+		self.assertIn(('disconnect', True), self.buses['/dev/R'].calls)
 
 	def test_port_in_use_fails_before_robot_connect(self) -> None:
 		"""기존 host 가 포트를 잡고 있으면 팔을 건드리기 전에 포트를 적은 오류."""
