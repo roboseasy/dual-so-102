@@ -63,3 +63,24 @@ class DualSO102ClientConfig(RobotConfig):
 	connect_timeout_s: float = 5.0
 	stale_timeout_s: float = 1.0
 	cameras: dict[str, CameraConfig] = field(default_factory=dict)
+
+
+@dataclass
+class DualSO102HostConfig:
+	"""Pi 의 dual-so102-host 설정 (CLI 의 --host.*, 등록하지 않는다).
+
+	Attributes:
+		port_zmq_cmd: 명령을 받는 포트 (client 와 같게).
+		port_zmq_observations: 관측을 보내는 포트 (client 와 같게).
+		connection_time_s: 이 시간 뒤 끝낸다. 0 이면 끝없이 돈다.
+		watchdog_timeout_ms: 명령이 이만큼 없으면 경고하고 자세를 유지한다.
+		max_loop_freq_hz: 루프 최대 주기.
+		jpeg_quality: 카메라 프레임 JPEG 품질.
+	"""
+
+	port_zmq_cmd: int = 5555
+	port_zmq_observations: int = 5556
+	connection_time_s: int = 0
+	watchdog_timeout_ms: int = 500
+	max_loop_freq_hz: int = 30
+	jpeg_quality: int = 90
