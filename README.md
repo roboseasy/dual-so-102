@@ -163,11 +163,17 @@ lerobot-record \
   --dataset.reset_time_s=10 \
   --dataset.push_to_hub=false \
   --display_data=true
+```
 
+LeRobot 0.6.0 은 녹화할 때마다 이름 끝에 날짜 · 시각을 붙여 저장합니다
+(예: `my_name/dual_so102_test_20261118_211947`, 폴더 `~/.cache/huggingface/lerobot/my_name/dual_so102_test_20261118_211947`).
+재생 · 학습에는 이 붙은 이름을 씁니다.
+
+```bash
 lerobot-replay \
   --robot.type=dual_so102_client \
   --robot.remote_ip=192.168.4.1 \
-  --dataset.repo_id=${HF_USER}/dual_so102_test \
+  --dataset.repo_id=${HF_USER}/dual_so102_test_20261118_211947 \
   --dataset.episode=0
 ```
 
