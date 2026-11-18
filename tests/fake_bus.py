@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 
 JOINTS = (
@@ -207,3 +208,9 @@ def write_calibration_file(path: Path, range_min: int = 1000,
 	}
 	path.parent.mkdir(parents=True, exist_ok=True)
 	path.write_text(json.dumps(data, indent=4))
+
+
+def camera(height: int, width: int) -> OpenCVCameraConfig:
+	"""열지 않는 카메라 설정 (생성만 하고 장치는 열지 않는다)."""
+	return OpenCVCameraConfig(index_or_path='/dev/null', fps=30,
+		width=width, height=height)

@@ -8,7 +8,6 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.robots.so_follower import SOFollowerConfig
 from lerobot.teleoperators.so_leader import SOLeaderConfig
 
@@ -16,6 +15,7 @@ from lerobot_robot_dual_so102 import DualSO102Follower
 from lerobot_robot_dual_so102 import DualSO102FollowerConfig
 from lerobot_robot_dual_so102 import DualSO102Leader
 from lerobot_robot_dual_so102 import DualSO102LeaderConfig
+from tests.fake_bus import camera
 from tests.fake_bus import patch_make_bus
 from tests.fake_bus import use_temp_calibration_root
 from tests.fake_bus import write_calibration_file
@@ -26,12 +26,6 @@ SEVEN_JOINTS = (
 )
 FOURTEEN_KEYS = {f'{side}_{joint}.pos'
 	for side in ('left', 'right') for joint in SEVEN_JOINTS}
-
-
-def camera(height: int, width: int) -> OpenCVCameraConfig:
-	"""열지 않는 카메라 설정."""
-	return OpenCVCameraConfig(index_or_path='/dev/null', fps=30,
-		width=width, height=height)
 
 
 def follower_config(**kwargs: object) -> DualSO102FollowerConfig:

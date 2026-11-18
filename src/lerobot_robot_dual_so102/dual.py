@@ -5,6 +5,8 @@
 같은 규칙(보정 id <id>_left/right, 최상위 카메라는 왼팔이 연다)으로 직접 만든다.
 """
 
+import logging
+
 from lerobot.cameras import CameraConfig
 from lerobot.robots import Robot
 from lerobot.robots.bi_so_follower import BiSOFollower
@@ -19,6 +21,8 @@ from .arm import SO102ArmFollower
 from .arm import SO102ArmLeader
 from .config import DualSO102FollowerConfig
 from .config import DualSO102LeaderConfig
+
+logger = logging.getLogger(__name__)
 
 
 def _require_id(device_id: str | None, option: str) -> None:
@@ -90,13 +94,25 @@ class DualSO102Follower(BiSOFollower):
 		if collisions:
 			raise ValueError(
 				f'카메라 이름이 최상위 · 팔별 설정에 겹칩니다: {sorted(collisions)}')
+		# 미러 모드는 좌우를 바꾼다: left_* 키(리더 왼팔)가 팔로워 오른팔을 움직인다.
+		# 포트 · 보정 파일 · 팔별 카메라를 짝으로 바꾸므로 다시 보정할 필요가 없다.
+		sources = {'left': config.left_arm_config,
+			'right': config.right_arm_config}
+		left_side, right_side = (('right', 'left') if config.mirror_mode
+			else ('left', 'right'))
+		left_source, right_source = sources[left_side], sources[right_side]
 		self.left_arm = SO102ArmFollower(_follower_arm_config(
-			config, config.left_arm_config, 'left',
-			{**config.left_arm_config.cameras, **config.cameras}))
+			config, left_source, left_side,
+			{**left_source.cameras, **config.cameras}),
+			is_mirror=config.mirror_mode)
 		self.right_arm = SO102ArmFollower(_follower_arm_config(
-			config, config.right_arm_config, 'right',
-			config.right_arm_config.cameras))
+			config, right_source, right_side, right_source.cameras),
+			is_mirror=config.mirror_mode)
 		self.cameras = {**self.left_arm.cameras, **self.right_arm.cameras}
+		if config.mirror_mode:
+			logger.info(
+				f'Mirror mode: left_* -> {left_source.port} ({self.left_arm.id}), '
+				f'right_* -> {right_source.port} ({self.right_arm.id})')
 
 
 def _leader_arm_config(
