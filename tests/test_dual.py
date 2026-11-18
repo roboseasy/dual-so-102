@@ -238,6 +238,7 @@ class DualTest(unittest.TestCase):
 			'import lerobot_robot_dual_so102',
 			"assert RobotConfig.get_choice_class('dual_so102_follower')",
 			"assert TeleoperatorConfig.get_choice_class('dual_so102_leader')",
+			"assert RobotConfig.get_choice_class('dual_so102_client')",
 			"print('COEXIST_OK')",
 		))
 		result = run_python(script, self.root)

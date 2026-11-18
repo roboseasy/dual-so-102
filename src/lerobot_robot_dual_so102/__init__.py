@@ -4,12 +4,16 @@
 등록한 설정과 장치 클래스를 여기서 내보낸다.
 """
 
+from .client import DualSO102Client
+from .config import DualSO102ClientConfig
 from .config import DualSO102FollowerConfig
 from .config import DualSO102LeaderConfig
 from .dual import DualSO102Follower
 from .dual import DualSO102Leader
 
 __all__ = [
+	'DualSO102Client',
+	'DualSO102ClientConfig',
 	'DualSO102Follower',
 	'DualSO102FollowerConfig',
 	'DualSO102Leader',

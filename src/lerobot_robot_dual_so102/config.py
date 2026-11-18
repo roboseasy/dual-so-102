@@ -5,7 +5,9 @@
 """
 
 from dataclasses import dataclass
+from dataclasses import field
 
+from lerobot.cameras import CameraConfig
 from lerobot.robots import RobotConfig
 from lerobot.robots.bi_so_follower import BiSOFollowerConfig
 from lerobot.teleoperators import TeleoperatorConfig
@@ -33,3 +35,31 @@ class DualSO102FollowerConfig(BiSOFollowerConfig):
 @dataclass
 class DualSO102LeaderConfig(BiSOLeaderConfig):
 	"""SO-102 7축 양팔 리더. 필드는 공식 bi_so_leader 와 같고 --teleop.id 는 필수다."""
+
+
+@RobotConfig.register_subclass('dual_so102_client')
+@dataclass
+class DualSO102ClientConfig(RobotConfig):
+	"""PC 에서 Pi 의 dual-so102-host 에 붙는 원격 양팔 (dual_so102_client).
+
+	카메라는 Pi 의 host 가 연다. cameras 에는 host 와 같은 이름 · 크기를 적는다
+	(PC 는 카메라를 열지 않고, 녹화 데이터셋의 모양을 정하는 데만 쓴다).
+
+	Attributes:
+		remote_ip: Pi 주소. 유선 10.42.0.78, AP 모드 192.168.4.1,
+			공유기 모드는 그 공유기가 준 주소 (setip 하면 192.168.0.(100+킷 번호)).
+		port_zmq_cmd: 명령 포트 (host 와 같게).
+		port_zmq_observations: 관측 포트 (host 와 같게).
+		polling_timeout_ms: 수신 스레드가 한 번에 기다리는 시간.
+		connect_timeout_s: 연결할 때 첫 관측(카메라 모두)을 기다리는 시간.
+		stale_timeout_s: host 관측이나 한 카메라가 이만큼 끊기면 멈춘다.
+		cameras: host 카메라와 같은 이름 · 크기 (width · height · fps 필수).
+	"""
+
+	remote_ip: str
+	port_zmq_cmd: int = 5555
+	port_zmq_observations: int = 5556
+	polling_timeout_ms: int = 15
+	connect_timeout_s: float = 5.0
+	stale_timeout_s: float = 1.0
+	cameras: dict[str, CameraConfig] = field(default_factory=dict)
