@@ -167,6 +167,27 @@ class ClientTest(unittest.TestCase):
 		self.assertLess(time.monotonic() - start, 1.5)
 		self.assertFalse(client.is_connected)
 
+	def test_default_waits_for_slow_host_start(self) -> None:
+		"""기본 설정 client 는 Pi host 가 카메라를 여는 동안 기다렸다가 붙는다.
+
+		실장비(2026-11-18): Pi host 는 카메라 3대를 여는 데 약 16초 걸린다. host 를 띄우자마자
+		PC 텔레옵을 켜면 예전 기본값 5초 안에 준비되지 않아 '응답이 없습니다' 로 끝났다.
+		"""
+		host = FakeHost(self)
+		observation: dict = joints()
+		observation['cam_top'] = np.full((480, 640, 3), 200, np.uint8)
+		host.message = encode_observation(observation)
+		late_start = threading.Timer(6.0, host.keep_sending)
+		late_start.start()
+		self.addCleanup(late_start.cancel)
+		client = DualSO102Client(DualSO102ClientConfig(remote_ip='127.0.0.1',
+			port_zmq_cmd=host.cmd_port, port_zmq_observations=host.obs_port,
+			cameras={'cam_top': camera(480, 640)}))
+		self.addCleanup(lambda: client.disconnect()
+			if client.is_connected else None)
+		client.connect()
+		self.assertIn('cam_top', client.get_observation())
+
 	def test_roundtrip_state_camera_and_action(self) -> None:
 		"""관측 14키 + cam_top, 명령은 14키(NaN 제외)만 host 에 간다."""
 		host = self.alive_host()

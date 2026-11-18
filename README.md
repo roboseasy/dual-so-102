@@ -149,6 +149,22 @@ lerobot-teleoperate \
   --display_data=false
 ```
 
+**카메라 화면을 보며 텔레옵** — `--robot.cameras` 를 Pi 와 같은 이름 · 크기로 적어야 client 가 프레임을 받아 rerun 창에
+띄웁니다. Pi 는 30 fps 로 보내므로 `--fps=30` 으로 맞춥니다 (텔레옵 기본은 60).
+
+```bash
+lerobot-teleoperate \
+  --robot.type=dual_so102_client \
+  --robot.remote_ip=10.42.0.78 \
+  --robot.cameras='{"cam_top": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}, "cam_left": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}, "cam_right": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30}}' \
+  --teleop.type=dual_so102_leader \
+  --teleop.id=bi_so102_leader \
+  --teleop.left_arm_config.port=/dev/bi_so102_leaders_left \
+  --teleop.right_arm_config.port=/dev/bi_so102_leaders_right \
+  --fps=30 \
+  --display_data=true
+```
+
 **녹화** — 카메라 이름 · 크기는 Pi 와 같게 적습니다 (PC 는 카메라를 열지 않으므로 `index_or_path` 는 아무 값이나 됩니다).
 
 ```bash
@@ -191,6 +207,8 @@ lerobot-replay \
 - 리더 포트는 Physical Labs 앱이 PC 에 만든 별칭(`/dev/bi_so102_leaders_*`)입니다. [USB 포트 고정](docs/2.ports.md)의
   예시 규칙으로 만들었다면 `/dev/so102_leader_left` · `/dev/so102_leader_right` 입니다.
 - 처음 실행하기 전에 리더를 팔로워와 비슷한 자세로 맞춥니다.
+- PC 는 Pi host 가 준비될 때까지 60초 기다립니다 (`--robot.connect_timeout_s`). Pi host 는 카메라 3대를 여는 데
+  약 16초 걸리니, Pi 에서 `명령을 기다립니다` 가 찍힌 뒤 PC 명령을 실행하면 바로 붙습니다.
 - Hugging Face 에 올리려면 `--dataset.repo_id=<HF 아이디>/dual_so102_pick` 과 `--dataset.push_to_hub=true` 를 씁니다.
   학습 · 추론은 [사용법](docs/1.usage.md), 카메라 · 운용 규칙은 [Pi 분리 구성](docs/3.pi.md)에 있습니다.
 

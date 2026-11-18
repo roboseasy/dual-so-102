@@ -165,8 +165,9 @@ class DualSO102Client(Robot):
 		if not has_state:
 			raise DeviceNotConnectedError(
 				f'{self.config.remote_ip} 의 dual-so102-host 응답이 없습니다 '
-				f'({self.config.connect_timeout_s}초). Pi 에서 host 가 도는지, '
-				'--robot.remote_ip · 포트가 맞는지 확인하세요.')
+				f'({self.config.connect_timeout_s}초). Pi 에서 host 가 돌고 '
+				"'명령을 기다립니다' 가 찍혔는지, --robot.remote_ip · 포트가 맞는지 "
+				'확인하세요.')
 		raise DeviceNotConnectedError(
 			f'host 가 카메라 {missing} 를 보내지 않습니다. host 와 client 의 '
 			'--robot.cameras 이름을 맞추세요.')

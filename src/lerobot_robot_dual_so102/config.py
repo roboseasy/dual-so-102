@@ -51,7 +51,8 @@ class DualSO102ClientConfig(RobotConfig):
 		port_zmq_cmd: 명령 포트 (host 와 같게).
 		port_zmq_observations: 관측 포트 (host 와 같게).
 		polling_timeout_ms: 수신 스레드가 한 번에 기다리는 시간.
-		connect_timeout_s: 연결할 때 첫 관측(카메라 모두)을 기다리는 시간.
+		connect_timeout_s: 연결할 때 첫 관측(카메라 모두)을 기다리는 시간. Pi host 는
+			카메라 3대를 여는 데 약 16초 걸리므로 넉넉히 둔다.
 		stale_timeout_s: host 관측이나 한 카메라가 이만큼 끊기면 멈춘다.
 		cameras: host 카메라와 같은 이름 · 크기 (width · height · fps 필수).
 	"""
@@ -60,7 +61,7 @@ class DualSO102ClientConfig(RobotConfig):
 	port_zmq_cmd: int = 5555
 	port_zmq_observations: int = 5556
 	polling_timeout_ms: int = 15
-	connect_timeout_s: float = 5.0
+	connect_timeout_s: float = 60.0
 	stale_timeout_s: float = 1.0
 	cameras: dict[str, CameraConfig] = field(default_factory=dict)
 
