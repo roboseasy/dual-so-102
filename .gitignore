@@ -1,3 +1,5 @@
 __pycache__/
 *.egg-info/
 .omc/
+# 장비마다 다른 udev 규칙 (config/99-dual-so102.rules.example 를 복사해 만든 것)
+config/99-dual-so102.rules
